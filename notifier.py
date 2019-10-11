@@ -7,6 +7,8 @@ from pyttsx import Engine
 from speedtest import Speedtest as Spd
 import matplotlib.pyplot as plt
 
+import connection_alerter.configs.settings
+
 FAMOUS_LAST_WORDS = """AAAAAAAAA,
                 Hey let's watch the rain as it's falling down.
                 Is this the reeal life, is this just fantasy?
@@ -38,7 +40,7 @@ def get_speed_data(upload=False):
     return res
 
 
-def pick_random_voice(e):
+def set_random_voice(e):
     """
     pick some voice based on the day of the week
     :param e:
@@ -46,15 +48,20 @@ def pick_random_voice(e):
     """
     voices = e.getProperty('voices')
     today = datetime.now().day
-    return voices[today % len(voices)].id
+    random_voice = voices[today % len(voices)].id
+    e.setProperty('voice', random_voice)
 
 
 def say_something(e, msg):
-    # TODO
-    pass
+    e.say(msg)
+    e.runAndWait()
 
 
-def test_and_plot():
+def download_and_plot():
+    """
+    measure download speed 5 times and graph it
+    :return:
+    """
     x = []
     y = []
     for i in range(5):
@@ -81,14 +88,13 @@ def main_loop():
                 # TODO: if speed below certain number or ping above certain number, say it.
                 time.sleep(60)
         except:
-            e.say(FAMOUS_LAST_WORDS)
-            e.runAndWait()
+            say_something(e, FAMOUS_LAST_WORDS)
             raise
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if args and args[0] == '-p':
-        test_and_plot()
+        download_and_plot()
     else:
         main_loop()
