@@ -1,42 +1,45 @@
 #!/usr/bin/env python2
 import sys
 import time
+import os
+import errno
+from os import path
 
 from datetime import datetime
 from pyttsx import Engine
 from speedtest import Speedtest as Spd
 import matplotlib.pyplot as plt
 
-import connection_alerter.configs.settings
+from connection_notifier.configs import settings
 
-FAMOUS_LAST_WORDS = """AAAAAAAAA,
-                Hey let's watch the rain as it's falling down.
-                Is this the reeal life, is this just fantasy?
-                THE SHIPPP, IS SINKING!
-                Help! I need somebody! Help! Not just anybody!
-                ERROR NUMBER 1337: Core systems have been damaged.
-                I can't feel my face but I like it.
-                Friends applaud, the comedy is finished.
-                Wake me up! wake me up inside. I can't wake up! wake me up inside.
-                Saave mee! call my name and save me from the dark."""
+# GLOBALS
+EPSILON = 0.001  # a minute is 0.016, this is more than enough
+SIXTY = 60.0
+MEBI = 2 ** 20
 
+
+# TODO add project to pypi: https://packaging.python.org/tutorials/packaging-projects/
+# TODO add project as script: https://python-packaging.readthedocs.io/en/latest/command-line-scripts.html
+# TODO: fix possible error where a minute might be skipped because of sleep + 2 speedtests (possible?)
+# TODO: remove prints
 
 def get_speed_data(upload=False):
     spd = Spd()
     print "testing download..."
     spd.download()
+    # TODO decide where to use upload
     if upload:
         print "testing upload..."
         spd.upload()
     res = spd.results.dict()
-    assert res
-    res['ping'] //= 1
-    print 'ping', res['ping']
-    res['download'] //= 2 ** 20
-    print 'download', res['download']
+    assert res, "no results from speedtest"
+    res['ping'] = int(res['ping'])
+    print 'ping =', res['ping']
+    res['download'] = int(res['download'] / MEBI)
+    print 'download =', res['download']
     if upload:
-        res['upload'] //= 2 ** 20
-        print 'upload', res['upload']
+        res['upload'] = int(res['upload'] / MEBI)
+        print 'upload =', res['upload']
     return res
 
 
@@ -49,46 +52,143 @@ def set_random_voice(e):
     voices = e.getProperty('voices')
     today = datetime.now().day
     random_voice = voices[today % len(voices)].id
+    print "voice selected:", random_voice
     e.setProperty('voice', random_voice)
 
 
-def say_something(e, msg):
-    e.say(msg)
-    e.runAndWait()
+def say_something(e, msg, hour=0, force=False):
+    force = True  # TODO: remove before release
+    if force or settings['hour_start'] < hour < settings['hour_end']:
+        e.say(msg)
+        e.runAndWait()
 
 
 def download_and_plot():
     """
-    measure download speed 5 times and graph it
+    measure ping 5 times and graph it
     :return:
     """
+    print "checking ping"
     x = []
     y = []
     for i in range(5):
-        print i
-        y.append(get_speed_data()[0])
+        print "iteration", i
+        y.append(get_speed_data()['ping'])
         x.append(datetime.now())
     plt.plot(x, y)
     plt.gcf().autofmt_xdate()
     plt.show()
 
 
-def save_daily_speed():
-    # TODO: save speed every 2 hours and graph it
-    plt.savefig('chngeme.png')
+def set_voice(e):
+    target = settings['voice']
+    voices = e.getProperty('voices')
+    if target == 'random':
+        set_random_voice(e)
+        return
+
+    for v in voices:
+        if target.lower() in v.id.lower():
+            selected = v.id
+            break
+    else:  # no match, don't change voice
+        return
+    # match found, change voice
+    e.setProperty('voice', selected)
+
+
+def evenly_divisible(a, b):
+    print "evenly:", a, b, abs(a % b)
+    print "returns", abs(a % b) < EPSILON or abs(b - a % b) < EPSILON
+    return abs(a % b) < EPSILON or abs(b - a % b) < EPSILON
+
+
+def plot_all_data(saved_download, saved_upload, saved_ping, now):
+    # plot speed
+    plt.subplot(211)
+    plt.xlabel("date")
+    plt.ylabel("megabytes")
+    plt.plot(saved_download['x'], saved_download['y'])
+    if settings['check_upload']:
+        plt.plot(saved_upload['x'], saved_upload['y'])
+        plt.legend(["download", "upload"])
+    else:
+        plt.legend(["download"])
+    plt.gcf().autofmt_xdate()
+    plt.title("speed")
+
+    # plot ping
+    plt.subplot(212)
+    plt.xlabel("date")
+    plt.ylabel("millisec")
+    plt.plot(saved_ping['x'], saved_ping['y'], 'g')
+    plt.gcf().autofmt_xdate()
+    plt.title("ping")
+
+    # save plot
+    destination_dir = path.join(settings['plot_directory'], "plots")
+    destination_file = path.join(destination_dir, "plot" + "-" + now.strftime("%Y-%m-%d-%H-%M"))
+    try:  # make directories, ignore exception if they already exist
+        os.makedirs(destination_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    print "saving to", path.abspath(destination_file)
+    plt.savefig(destination_file)
+    plt.close()
 
 
 def main_loop():
-    print "starting main loop:"
+    print "starting main loop"
     e = Engine()
+    set_voice(e)
+    say_something(e, "hello world", force=True)
+    saved_ping = {'x': [], 'y': []}
+    saved_download = {'x': [], 'y': []}
+    saved_upload = {'x': [], 'y': []}
+    store_next_speedtest = False
     while True:
         try:
-            if datetime.now().minute % 15 == 0:
-                print "starting speedtest", datetime.now().strftime("%Y-%m-%D, %H:%M")
-                # TODO: if speed below certain number or ping above certain number, say it.
+            now = datetime.now()
+            if now.hour == 0 and now.minute == 0:  # new day
+                set_voice(e)
+
+            if evenly_divisible(now.hour + now.minute / SIXTY, settings['graph_save_interval']):
+                plot_all_data(saved_download, saved_upload, saved_ping, now)
+
+                # clear dictionaries
+                saved_ping, saved_download, saved_upload = {'x': [], 'y': []}, {'x': [], 'y': []}, {'x': [], 'y': []}
+
+            # store next speedtest data
+            if evenly_divisible(now.hour + now.minute / SIXTY, settings['graph_add_interval']):
+                store_next_speedtest = True
+
+            if now.minute % settings['download_interval'] == 0:
+                print now.strftime("%Y-%m-%d, %H:%M") + ": starting speedtest"
+                data = get_speed_data(upload=settings['check_upload'])
+                if data['ping'] > settings['ping_upper_limit']:
+                    msg = "BAD PING! %d milliseconds." % data['ping']
+                    say_something(e, msg, now.hour)
+                if data['download'] < settings['download_lower_limit']:
+                    msg = "BAD DOWNLOAD SPEED! %d megabits per second." % data['download']  # it's actually mebibits
+                    say_something(e, msg, now.hour)
+                if settings['check_upload'] and data['upload'] < settings['upload_lower_limit']:
+                    msg = "BAD UPLOAD SPEED! %d megabits per second." % data['upload']
+                    say_something(e, msg, now.hour)
+                if store_next_speedtest:
+                    saved_ping['x'].append(now)
+                    saved_ping['y'].append(data['ping'])
+                    saved_download['x'].append(now)
+                    saved_download['y'].append(data['download'])
+                    if settings['check_upload']:
+                        saved_upload['x'].append(now)
+                        saved_upload['y'].append(data['upload'])
+                    store_next_speedtest = False
                 time.sleep(60)
+            else:
+                time.sleep(30)
         except:
-            say_something(e, FAMOUS_LAST_WORDS)
+            say_something(e, settings['last_words'], datetime.now().hour)
             raise
 
 
