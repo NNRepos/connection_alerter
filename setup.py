@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="connection-notifier-nnrepos",
-    version="0.1a",
+    version="0.1rc",
     author="NN",
     description="a script that checks the host's data connection",
     long_description=long_description,
@@ -19,6 +19,6 @@ setuptools.setup(
     ],
     python_requires='>=2.7',
     entry_points={
-        'console_scripts': ['notifier=notifier:main_loop']
+        'console_scripts': ['notifier=connection_notifier.notifier:main_loop']
     },
 )
