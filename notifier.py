@@ -7,27 +7,30 @@ from os import path
 
 from datetime import datetime
 from pyttsx import Engine
-from speedtest import Speedtest as Spd
+from speedtest import ConfigRetrievalError, Speedtest as Spd
 import matplotlib.pyplot as plt
 
 from connection_notifier.configs import settings
 
 # GLOBALS
-EPSILON = 0.001  # a minute is 0.016, this is more than enough
+EPSILON = 0.001  # a minute is ~0.016 hours, this is more than enough
 SIXTY = 60.0
 MEBI = 2 ** 20
 
 
 # TODO add project to pypi: https://packaging.python.org/tutorials/packaging-projects/
-# TODO add project as script: https://python-packaging.readthedocs.io/en/latest/command-line-scripts.html
 # TODO: fix possible error where a minute might be skipped because of sleep + 2 speedtests (possible?)
-# TODO: remove prints
+# TODO: add maximum allowed spikes setting to ignore ~1 in 10 high pings/ low speeds
 
 def get_speed_data(upload=False):
-    spd = Spd()
+    try:
+        spd = Spd()
+    except ConfigRetrievalError as e:
+        print "speedtest raised error:", e.message
+        print "skipping this time."
+        return
     print "testing download..."
     spd.download()
-    # TODO decide where to use upload
     if upload:
         print "testing upload..."
         spd.upload()
@@ -57,7 +60,6 @@ def set_random_voice(e):
 
 
 def say_something(e, msg, hour=0, force=False):
-    force = True  # TODO: remove before release
     if force or settings['hour_start'] < hour < settings['hour_end']:
         e.say(msg)
         e.runAndWait()
@@ -98,14 +100,12 @@ def set_voice(e):
 
 
 def evenly_divisible(a, b):
-    print "evenly:", a, b, abs(a % b)
-    print "returns", abs(a % b) < EPSILON or abs(b - a % b) < EPSILON
     return abs(a % b) < EPSILON or abs(b - a % b) < EPSILON
 
 
 def plot_all_data(saved_download, saved_upload, saved_ping, now):
     # plot speed
-    plt.subplot(211)
+    plt.subplot(311)
     plt.xlabel("date")
     plt.ylabel("megabytes")
     plt.plot(saved_download['x'], saved_download['y'])
@@ -118,7 +118,7 @@ def plot_all_data(saved_download, saved_upload, saved_ping, now):
     plt.title("speed")
 
     # plot ping
-    plt.subplot(212)
+    plt.subplot(313)
     plt.xlabel("date")
     plt.ylabel("millisec")
     plt.plot(saved_ping['x'], saved_ping['y'], 'g')
@@ -139,6 +139,10 @@ def plot_all_data(saved_download, saved_upload, saved_ping, now):
 
 
 def main_loop():
+    """
+    starts infinite loop which periodically uses speedtest and notifies if the output is not within the defined bounds.
+    :return:
+    """
     print "starting main loop"
     e = Engine()
     set_voice(e)
@@ -163,27 +167,29 @@ def main_loop():
             if evenly_divisible(now.hour + now.minute / SIXTY, settings['graph_add_interval']):
                 store_next_speedtest = True
 
-            if now.minute % settings['download_interval'] == 0:
+            if evenly_divisible(now.minute, settings['download_interval']):
                 print now.strftime("%Y-%m-%d, %H:%M") + ": starting speedtest"
                 data = get_speed_data(upload=settings['check_upload'])
-                if data['ping'] > settings['ping_upper_limit']:
-                    msg = "BAD PING! %d milliseconds." % data['ping']
-                    say_something(e, msg, now.hour)
-                if data['download'] < settings['download_lower_limit']:
-                    msg = "BAD DOWNLOAD SPEED! %d megabits per second." % data['download']  # it's actually mebibits
-                    say_something(e, msg, now.hour)
-                if settings['check_upload'] and data['upload'] < settings['upload_lower_limit']:
-                    msg = "BAD UPLOAD SPEED! %d megabits per second." % data['upload']
-                    say_something(e, msg, now.hour)
-                if store_next_speedtest:
-                    saved_ping['x'].append(now)
-                    saved_ping['y'].append(data['ping'])
-                    saved_download['x'].append(now)
-                    saved_download['y'].append(data['download'])
-                    if settings['check_upload']:
-                        saved_upload['x'].append(now)
-                        saved_upload['y'].append(data['upload'])
-                    store_next_speedtest = False
+                if data:
+                    if data['ping'] > settings['ping_upper_limit']:
+                        msg = "BAD PING! %d milli seconds." % data['ping']
+                        say_something(e, msg, now.hour)
+                    if data['download'] < settings['download_lower_limit']:
+                        msg = "BAD DOWNLOAD SPEED! %d megabits per second." % data['download']  # it's actually mebibits
+                        say_something(e, msg, now.hour)
+                    if settings['check_upload'] and data['upload'] < settings['upload_lower_limit']:
+                        msg = "BAD UPLOAD SPEED! %d megabits per second." % data['upload']
+                        say_something(e, msg, now.hour)
+                    if store_next_speedtest:
+                        saved_ping['x'].append(now)
+                        saved_ping['y'].append(data['ping'])
+                        saved_download['x'].append(now)
+                        saved_download['y'].append(data['download'])
+                        if settings['check_upload']:
+                            saved_upload['x'].append(now)
+                            saved_upload['y'].append(data['upload'])
+                        store_next_speedtest = False
+                # wait either way
                 time.sleep(60)
             else:
                 time.sleep(30)
