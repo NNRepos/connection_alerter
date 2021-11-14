@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 import sys
 import time
 import os
@@ -6,7 +6,7 @@ import errno
 from os import path
 
 from datetime import datetime
-from pyttsx import Engine
+import pyttsx3
 from speedtest import ConfigRetrievalError, Speedtest as Spd
 import matplotlib.pyplot as plt
 
@@ -26,23 +26,23 @@ def get_speed_data(upload=False):
     try:
         spd = Spd()
     except ConfigRetrievalError as e:
-        print "speedtest raised error:", e.message
-        print "skipping this time."
+        print("speedtest raised error:", e.message)
+        print("skipping this time.")
         return
-    print "testing download..."
+    print("testing download...")
     spd.download()
     if upload:
-        print "testing upload..."
+        print("testing upload...")
         spd.upload()
     res = spd.results.dict()
     assert res, "no results from speedtest"
     res['ping'] = int(res['ping'])
-    print 'ping =', res['ping']
+    print('ping =', res['ping'])
     res['download'] = int(res['download'] / MEBI)
-    print 'download =', res['download']
+    print('download =', res['download'])
     if upload:
         res['upload'] = int(res['upload'] / MEBI)
-        print 'upload =', res['upload']
+        print('upload =', res['upload'])
     return res
 
 
@@ -55,7 +55,7 @@ def set_random_voice(e):
     voices = e.getProperty('voices')
     today = datetime.now().day
     random_voice = voices[today % len(voices)].id
-    print "voice selected:", random_voice
+    print("voice selected:", random_voice)
     e.setProperty('voice', random_voice)
 
 
@@ -70,11 +70,11 @@ def download_and_plot():
     measure ping 5 times and graph it
     :return:
     """
-    print "checking ping"
+    print("checking ping")
     x = []
     y = []
     for i in range(5):
-        print "iteration", i
+        print("iteration", i)
         y.append(get_speed_data()['ping'])
         x.append(datetime.now())
     plt.plot(x, y)
@@ -133,7 +133,7 @@ def plot_all_data(saved_download, saved_upload, saved_ping, now):
     except OSError as e:
         if e.errno != errno.EEXIST:
             raise
-    print "saving to", path.abspath(destination_file)
+    print("saving to", path.abspath(destination_file))
     plt.savefig(destination_file)
     plt.close()
 
@@ -143,8 +143,8 @@ def main_loop():
     starts infinite loop which periodically uses speedtest and notifies if the output is not within the defined bounds.
     :return:
     """
-    print "starting main loop"
-    e = Engine()
+    print("starting main loop")
+    e = pyttsx3.init()
     set_voice(e)
     say_something(e, "hello world", force=True)
     saved_ping = {'x': [], 'y': []}
@@ -168,7 +168,7 @@ def main_loop():
                 store_next_speedtest = True
 
             if evenly_divisible(now.minute, settings['download_interval']):
-                print now.strftime("%Y-%m-%d, %H:%M") + ": starting speedtest"
+                print(now.strftime("%Y-%m-%d, %H:%M") + ": starting speedtest")
                 data = get_speed_data(upload=settings['check_upload'])
                 if data:
                     if data['ping'] > settings['ping_upper_limit']:
@@ -176,9 +176,11 @@ def main_loop():
                         say_something(e, msg, now.hour)
                     if data['download'] < settings['download_lower_limit']:
                         msg = "BAD DOWNLOAD SPEED! %d megabits per second." % data['download']  # it's actually mebibits
+                        print(f"download < {settings['download_lower_limit']}")
                         say_something(e, msg, now.hour)
                     if settings['check_upload'] and data['upload'] < settings['upload_lower_limit']:
                         msg = "BAD UPLOAD SPEED! %d megabits per second." % data['upload']
+                        print(f"upload < {settings['upload_lower_limit']}")
                         say_something(e, msg, now.hour)
                     if store_next_speedtest:
                         saved_ping['x'].append(now)

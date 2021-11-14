@@ -13,10 +13,10 @@ FAMOUS_LAST_WORDS = """AAAAAAAAA,
 settings = {
     'voice': "random",  # (STRING) random, hazel, david, or zira
     'plot_directory': ".",  # (STRING) this is where the graph PNGs will be saved
-    'graph_save_interval': 1.5,  # (HOURS) how often a graph will be saved and data reset
-    'graph_add_interval': 0.1,  # (HOURS) how often data will be added - can't be less than download_interval
-    'download_interval': 15,  # (MINUTES) how often a speedtest will be run
-    'download_lower_limit': 30,  # (MEGABYTES) speed lower than this will be notified
+    'graph_save_interval': 0.03,  # (HOURS) how often a graph will be saved and data reset
+    'graph_add_interval': 0.01,  # (HOURS) how often data will be added - can't be less than download_interval
+    'download_interval': 0.1,  # (MINUTES) how often a speedtest will be run
+    'download_lower_limit': 100,  # (MEGABYTES) speed lower than this will be notified
     'ping_upper_limit': 150,  # (MILLISEC) ping higher than this will be notified
     'upload_lower_limit': 1,  # (MEGABYTES) speed lower than this will be notified
     'check_upload': True,  # True/False - decide whether to check+save upload speed
